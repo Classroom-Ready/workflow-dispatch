@@ -1,5 +1,12 @@
 # GitHub Action for Dispatching Workflows
 
+> **Classroom-Ready fork.** Forked from [`aurelien-baudet/workflow-dispatch@v4.0.0`](https://github.com/aurelien-baudet/workflow-dispatch)
+> and bumped to the `node24` action runtime (upstream is pinned to the
+> deprecated `node20`). Source is otherwise unchanged. Referenced across our
+> repos as `Classroom-Ready/workflow-dispatch@v1`. We adopted it to replace
+> `convictional/trigger-workflow-and-wait`, which does not surface the
+> downstream run's logs on failure (`workflow-logs: print` here does).
+
 This action triggers another GitHub Actions workflow, using the `workflow_dispatch` event.  
 The workflow must be configured for this event type e.g. `on: [workflow_dispatch]`
 
