@@ -5,8 +5,11 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "ncc build src/main.ts -o dist",
+    "test": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test test/*.test.mts",
     "lint": "eslint src/",
-    "lint-fix": "eslint src/ --fix"
+    "lint-fix": "eslint src/ --fix",
+    "validate": "yarn build && yarn lint && yarn test",
+    "prepare": "husky"
   },
   "keywords": [
     "github",
@@ -17,12 +20,13 @@
   "author": "Aurélien Baudet",
   "license": "MIT",
   "devDependencies": {
-    "@actions/core": "^3.0.1",
-    "@actions/github": "^9.1.1",
+    "@actions/core": "^2.0.3",
+    "@actions/github": "^8.0.1",
     "@typescript-eslint/eslint-plugin": "^8.63.0",
     "@typescript-eslint/parser": "^8.63.0",
     "@vercel/ncc": "^0.44.1",
     "eslint": "^10.6.0",
+    "husky": "^9.1.7",
     "typescript": "^6.0.3"
   }
 }
