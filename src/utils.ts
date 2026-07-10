@@ -70,6 +70,18 @@ export function getArgs() {
   }
 }
 
+// GitHub is sunsetting unversioned requests (they currently fall back to the oldest API
+// version's behaviour) - see https://docs.github.com/en/rest/about-the-rest-api/api-versions.
+// octokit does not send this header by default, so every REST call must opt in explicitly.
+// Check that doc for the current latest version before bumping this.
+const GITHUB_API_VERSION = '2026-03-10'
+
+export function getOctokit(token: string) {
+  return github.getOctokit(token, {
+    request: { headers: { 'x-github-api-version': GITHUB_API_VERSION } }
+  })
+}
+
 export function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }

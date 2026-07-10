@@ -1,6 +1,6 @@
 import * as core from '@actions/core'
-import * as github from '@actions/github'
 import { debug } from './debug'
+import { getOctokit } from './utils'
 
 interface JobInfo {
   name: string,
@@ -19,7 +19,7 @@ export async function handleWorkflowLogsPerJob(args: any, workflowRunId: number)
     return
   }
 
-  const octokit = github.getOctokit(token)
+  const octokit = getOctokit(token)
   const runId = workflowRunId
   const response = await octokit.rest.actions.listJobsForWorkflowRun({
     owner: owner,

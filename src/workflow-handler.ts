@@ -1,7 +1,7 @@
 
 import * as core from '@actions/core'
-import * as github from '@actions/github'
 import { debug } from './debug'
+import { getOctokit } from './utils'
 
 export enum WorkflowRunStatus {
   QUEUED = 'queued',
@@ -56,7 +56,7 @@ export class WorkflowHandler {
     private ref: string,
     private runName: string) {
     // Get octokit client for making API calls
-    this.octokit = github.getOctokit(token)
+    this.octokit = getOctokit(token)
   }
 
   async triggerWorkflow(inputs: any) {
