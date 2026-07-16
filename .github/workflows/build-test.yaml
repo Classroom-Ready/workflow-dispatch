@@ -10,8 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Check out repository
-      uses: actions/checkout@v3
-    - uses: actions/setup-node@v3
+      uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
       with:
         node-version: '20'
     - name: Build with ncc
@@ -22,7 +22,7 @@ jobs:
     - name: Test
       run: yarn run test
     - name: Archive dist
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: build
         path: dist
@@ -33,9 +33,9 @@ jobs:
     name: "echo-1-test [trigger|by workflow name]"
     steps:
     - name: Check out repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     - name: Download dist
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: build
         path: dist
@@ -53,9 +53,9 @@ jobs:
     name: "echo-2-test [trigger|by workflow filename]"
     steps:
     - name: Check out repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     - name: Download dist
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: build
         path: dist
@@ -80,9 +80,9 @@ jobs:
     name: "long-running-test [trigger+wait|by workflow filename|shoud succeed]"
     steps:
     - name: Check out repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     - name: Download dist
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: build
         path: dist
@@ -112,9 +112,9 @@ jobs:
     name: "failing-test [trigger+wait|by workflow filename|should report failure]"
     steps:
     - name: Check out repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     - name: Download dist
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: build
         path: dist
@@ -145,9 +145,9 @@ jobs:
     name: "timeout-test [trigger+wait|by workflow filename|should report timed_out]"
     steps:
     - name: Check out repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     - name: Download dist
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: build
         path: dist
@@ -177,9 +177,9 @@ jobs:
     name: "print-workflow-logs-test [trigger+wait|by workflow filename|print logs|should report timed_out]"
     steps:
     - name: Check out repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     - name: Download dist
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: build
         path: dist
@@ -227,9 +227,9 @@ jobs:
       RUN_NAME: ${{ github.repository }}/actions/runs/${{ github.run_id }}/envs/${{ matrix.environment }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Download dist
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: build
           path: dist
@@ -278,9 +278,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Check out repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     - name: Download dist
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: build
         path: dist
