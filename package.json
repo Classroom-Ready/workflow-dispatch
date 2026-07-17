@@ -3,8 +3,10 @@
   "version": "4.1.1",
   "description": "Trigger running GitHub Actions workflows and wait for result",
   "main": "dist/index.js",
+  "type": "module",
+  "packageManager": "yarn@4.11.0",
   "scripts": {
-    "build": "ncc build src/main.ts -o dist",
+    "build": "node build.mjs",
     "test": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test test/*.test.mts",
     "lint": "eslint src/",
     "lint-fix": "eslint src/ --fix",
@@ -20,12 +22,12 @@
   "author": "Aurélien Baudet",
   "license": "MIT",
   "devDependencies": {
-    "@actions/core": "^2.0.3",
-    "@actions/github": "^8.0.1",
-    "@typescript-eslint/eslint-plugin": "^8.63.0",
-    "@typescript-eslint/parser": "^8.63.0",
-    "@vercel/ncc": "^0.44.1",
-    "eslint": "^10.6.0",
+    "@actions/core": "^3.0.1",
+    "@actions/github": "^9.1.1",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
+    "@typescript-eslint/parser": "^8.64.0",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.7.0",
     "husky": "^9.1.7",
     "typescript": "^6.0.3"
   }

@@ -1,7 +1,9 @@
-// Regression tests for a class of bug we shipped in v4.1.1: bumping @actions/core and
-// @actions/github to ESM-only majors made ncc (a CJS bundler) silently emit a stub that
-// throws at runtime instead of failing the build - see
+// Regression tests for a class of bug we shipped in v4.1.1: @actions/core and @actions/github
+// are ESM-only, and bundling them with a CommonJS bundler silently emitted a stub that threw
+// at runtime instead of failing the build - see
 // https://github.com/Classroom-Ready/classroomready_deployments/actions/runs/29111176742.
+// The bundle is now ESM (esbuild), which errors on an unresolved import rather than stubbing;
+// these tests assert the dependencies that broke back then are genuinely inlined.
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -12,24 +14,32 @@ import test from 'node:test'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const distPath = path.join(__dirname, '..', 'dist', 'index.js')
 
-test('dist/index.js does not contain an ncc "module not found" stub', () => {
+test('dist/index.js inlines @actions/core and @actions/github rather than leaving a runtime require', () => {
   const dist = readFileSync(distPath, 'utf8')
 
-  // ncc emits this stub (instead of a build error) when it cannot statically inline a
-  // dependency - e.g. an ESM-only package it can't require() into the CJS bundle.
-  assert.equal(
-    dist.includes('webpackMissingModule'),
-    false,
-    'dist/index.js has an unbundled dependency - it will throw "Cannot find module" at runtime. ' +
-      'Check every devDependency is CommonJS-resolvable (no "type": "module" with no "require" export).'
-  )
+  // If a dependency failed to inline it would survive as a bare runtime require of the
+  // package - which throws "Cannot find module" since dependencies are not shipped in dist.
+  for (const pkg of ['@actions/core', '@actions/github']) {
+    assert.equal(
+      dist.includes(`require("${pkg}")`) || dist.includes(`require('${pkg}')`),
+      false,
+      `dist/index.js still requires ${pkg} at runtime - it was not bundled and will throw ` +
+        '"Cannot find module".'
+    )
+  }
 
-  // A positive marker that @actions/core actually got bundled, so a future rename of ncc's
-  // stub (or a different failure shape) can't silently pass this test.
+  // Positive markers that each package's code actually landed in the bundle: @actions/core's
+  // input-validation error string, and octokit's default REST base URL (pulled in via
+  // @actions/github). A future failure shape then can't silently pass this test.
   assert.equal(
     dist.includes('Input required and not supplied'),
     true,
     '@actions/core error strings are missing from dist/index.js - it may not be bundled at all.'
+  )
+  assert.equal(
+    dist.includes('api.github.com'),
+    true,
+    'octokit (via @actions/github) is missing from dist/index.js - it may not be bundled at all.'
   )
 })
 
