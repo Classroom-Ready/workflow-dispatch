@@ -23916,12 +23916,11 @@ function getOctokit(token, options, ...additionalPlugins) {
 }
 
 // src/utils.ts
-var TimeUnit = /* @__PURE__ */ ((TimeUnit2) => {
-  TimeUnit2[TimeUnit2["S"] = 1e3] = "S";
-  TimeUnit2[TimeUnit2["M"] = 6e4] = "M";
-  TimeUnit2[TimeUnit2["H"] = 36e5] = "H";
-  return TimeUnit2;
-})(TimeUnit || {});
+var TimeUnit = {
+  S: 1e3,
+  M: 60 * 1e3,
+  H: 60 * 60 * 1e3
+};
 function toMilliseconds(timeWithUnit) {
   const unitStr = timeWithUnit.substring(timeWithUnit.length - 1);
   const unit = TimeUnit[unitStr.toUpperCase()];
@@ -23977,9 +23976,11 @@ function getArgs() {
 }
 var GITHUB_API_VERSION = "2026-03-10";
 function getOctokit2(token) {
-  return getOctokit(token, {
-    request: { headers: { "x-github-api-version": GITHUB_API_VERSION } }
+  const octokit = getOctokit(token);
+  octokit.request = octokit.request.defaults({
+    headers: { "x-github-api-version": GITHUB_API_VERSION }
   });
+  return octokit;
 }
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
