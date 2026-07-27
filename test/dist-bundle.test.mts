@@ -5,8 +5,9 @@
 // The bundle is now ESM (esbuild), which errors on an unresolved import rather than stubbing;
 // these tests assert the dependencies that broke back then are genuinely inlined.
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
@@ -44,29 +45,43 @@ test('dist/index.js inlines @actions/core and @actions/github rather than leavin
 })
 
 test('running dist/index.js outside a workflow fails cleanly via @actions/core, not a raw crash', () => {
-  // Strip inherited GITHUB_*/INPUT_* so this doesn't inherit a real runner's environment
-  // (and can't write to a real $GITHUB_OUTPUT file).
-  const env = Object.fromEntries(
-    Object.entries(process.env).filter(
-      ([key]) => !key.startsWith('GITHUB_') && !key.startsWith('INPUT_')
+  // Run the bundle from a scratch dir that has NO node_modules to resolve against - a
+  // consumer checks out only the committed files (dist/ + package.json, node_modules is
+  // gitignored). Running from the repo root would let an unbundled dependency resolve out
+  // of our own node_modules and hide exactly the v4.1.1 "Cannot find module" crash. The
+  // scratch package.json is "type": "module" because the bundle is ESM.
+  const scratch = mkdtempSync(path.join(tmpdir(), 'workflow-dispatch-dist-'))
+  try {
+    const scratchDist = path.join(scratch, 'index.js')
+    copyFileSync(distPath, scratchDist)
+    writeFileSync(path.join(scratch, 'package.json'), JSON.stringify({ type: 'module' }))
+
+    // Strip inherited GITHUB_*/INPUT_* so this doesn't inherit a real runner's environment
+    // (and can't write to a real $GITHUB_OUTPUT file).
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([key]) => !key.startsWith('GITHUB_') && !key.startsWith('INPUT_')
+      )
     )
-  )
 
-  const result = spawnSync(process.execPath, [distPath], { encoding: 'utf8', env }) as {
-    status: number | null
-    stdout: string
-    stderr: string
+    const result = spawnSync(process.execPath, [scratchDist], {
+      encoding: 'utf8',
+      env,
+      cwd: scratch,
+    }) as { status: number | null; stdout: string; stderr: string }
+
+    assert.equal(result.status, 1, 'action should exit non-zero when required context is missing')
+    assert.match(
+      result.stdout,
+      /::error::/,
+      'a healthy failure is reported via core.setFailed (an ::error:: workflow command on stdout)'
+    )
+    assert.doesNotMatch(
+      result.stderr,
+      /Cannot find module|MODULE_NOT_FOUND/,
+      'stderr should not contain a raw Node module-resolution crash - the bundle is not self-contained'
+    )
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
   }
-
-  assert.equal(result.status, 1, 'action should exit non-zero when required context is missing')
-  assert.match(
-    result.stdout,
-    /::error::/,
-    'a healthy failure is reported via core.setFailed (an ::error:: workflow command on stdout)'
-  )
-  assert.doesNotMatch(
-    result.stderr,
-    /Cannot find module|MODULE_NOT_FOUND/,
-    'stderr should not contain a raw Node module-resolution crash'
-  )
 })

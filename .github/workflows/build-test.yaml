@@ -5,6 +5,15 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
+# The self-tests dispatch fixture workflows in THIS repo. workflow_dispatch and
+# repository_dispatch are the documented exceptions to the "GITHUB_TOKEN can't trigger
+# workflows" rule, so the built-in token works here and no PERSONAL_TOKEN secret is needed.
+# (Consumers dispatching into a DIFFERENT repo still need a PAT or GitHub App token.)
+# actions: write covers createWorkflowDispatch plus reading the triggered run's status/logs.
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -44,7 +53,7 @@ jobs:
       uses: ./
       with:
         workflow: Message Echo 1
-        token: ${{ secrets.PERSONAL_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}
         inputs: '{"message": "blah blah"}'
         wait-for-completion: false
 
@@ -64,7 +73,7 @@ jobs:
       uses: ./
       with:
         workflow: echo-2.yaml
-        token: ${{ secrets.PERSONAL_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}
         wait-for-completion: false
 
     # - name: Invoke echo 1 workflow by id
@@ -92,7 +101,7 @@ jobs:
       uses: ./
       with:
         workflow: long-running.yml
-        token: ${{ secrets.PERSONAL_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}
         wait-for-completion-interval: 10s
         wait-for-completion-timeout: 5m
         display-workflow-run-url-interval: 10s
@@ -124,7 +133,7 @@ jobs:
       uses: ./
       with:
         workflow: failing.yml
-        token: ${{ secrets.PERSONAL_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}
         wait-for-completion-interval: 10s
         wait-for-completion-timeout: 60s
         display-workflow-run-url-interval: 10s
@@ -157,7 +166,7 @@ jobs:
       uses: ./
       with:
         workflow: timeout.yml
-        token: ${{ secrets.PERSONAL_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}
         wait-for-completion-interval: 10s
         wait-for-completion-timeout: 30s
         display-workflow-run-url-interval: 10s
@@ -189,7 +198,7 @@ jobs:
       uses: ./
       with:
         workflow: retrieve-logs.yml
-        token: ${{ secrets.PERSONAL_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}
         wait-for-completion-interval: 10s
         wait-for-completion-timeout: 120s
         display-workflow-run-url-interval: 10s
@@ -239,7 +248,7 @@ jobs:
         uses: ./
         with:
           workflow: named-run.yml
-          token: ${{ secrets.PERSONAL_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           run-name: ${{ env.RUN_NAME }}
           wait-for-completion-interval: 10s
           wait-for-completion-timeout: 120s
@@ -277,6 +286,10 @@ jobs:
       - print-workflow-logs-test
       - parallel-runs-test
     runs-on: ubuntu-latest
+    # Pushes the rebuilt dist back to the repo, so it needs write on top of the
+    # workflow-level read default.
+    permissions:
+      contents: write
     steps:
     - name: Check out repository
       uses: actions/checkout@v4
