@@ -1,3 +1,4 @@
+# Test fixture dispatched by build-test.yaml's live-dispatch self-tests via this action.
 name: Long running
 
 on:
