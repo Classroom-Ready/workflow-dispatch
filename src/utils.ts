@@ -1,11 +1,14 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
 
-enum TimeUnit {
-  S = 1000,
-  M = 60 * 1000,
-  H = 60 * 60 * 1000
-}
+// A plain const object rather than an enum so the module imports cleanly under Node's
+// --experimental-strip-types test runner (it can't compile enums), which lets the tests
+// exercise these helpers directly.
+const TimeUnit = {
+  S: 1000,
+  M: 60 * 1000,
+  H: 60 * 60 * 1000
+} as const
 
 function toMilliseconds(timeWithUnit: string): number {
   const unitStr = timeWithUnit.substring(timeWithUnit.length-1)
@@ -70,16 +73,23 @@ export function getArgs() {
   }
 }
 
-// GitHub is sunsetting unversioned requests (they currently fall back to the oldest API
-// version's behaviour) - see https://docs.github.com/en/rest/about-the-rest-api/api-versions.
-// octokit does not send this header by default, so every REST call must opt in explicitly.
-// Check that doc for the current latest version before bumping this.
+// octokit sends REST requests unversioned by default, and GitHub is sunsetting unversioned
+// requests - POST .../dispatches responds with a deprecation warning (removal 2028-03-10).
+// Pin the current latest version (see GET https://api.github.com/versions, or
+// https://docs.github.com/en/rest/about-the-rest-api/api-versions). Check that list before
+// bumping this.
 const GITHUB_API_VERSION = '2026-03-10'
 
 export function getOctokit(token: string) {
-  return github.getOctokit(token, {
-    request: { headers: { 'x-github-api-version': GITHUB_API_VERSION } }
+  const octokit = github.getOctokit(token)
+  // Neither the constructor `headers` option nor `request.headers` attaches a default header
+  // in this octokit version; only redefining `request` with a merged default does. `.rest.*`
+  // calls route through `octokit.request`, so this covers every endpoint we use. Verified
+  // against POST .../dispatches: with this the deprecation warning is gone, without it present.
+  octokit.request = octokit.request.defaults({
+    headers: { 'x-github-api-version': GITHUB_API_VERSION }
   })
+  return octokit
 }
 
 export function sleep(ms: number) {
