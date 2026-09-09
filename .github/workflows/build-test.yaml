@@ -298,8 +298,22 @@ jobs:
       with:
         name: build
         path: dist
+    # Commits the rebuilt dist back to the branch that ran, and is a no-op when dist
+    # matches what is already committed. Push auth comes from the token
+    # actions/checkout persists in the local git config (persist-credentials
+    # defaults to true), so no third-party code runs under contents: write.
     - name: Update repo with build
-      uses: mikeal/publish-to-github-action@master
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TARGET_REF: ${{ github.ref }}
+        SOURCE_SHA: ${{ github.sha }}
+      run: |
+        git config user.name 'github-actions[bot]'
+        git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+        git add -A dist
+        if git diff --cached --quiet -- dist; then
+          echo "dist matches ${SOURCE_SHA} - nothing to publish"
+          exit 0
+        fi
+        git commit -m "Automated publish: dist for ${SOURCE_SHA}"
+        git push origin "HEAD:${TARGET_REF}"
 
