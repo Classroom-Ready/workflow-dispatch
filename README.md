@@ -5,7 +5,9 @@
 > deprecated `node20`). Source is otherwise unchanged. Referenced across our
 > repos as `Classroom-Ready/workflow-dispatch@v1`. We adopted it to replace
 > `convictional/trigger-workflow-and-wait`, which does not surface the
-> downstream run's logs on failure (`workflow-logs: print` here does).
+> downstream run's logs on failure (`workflow-logs: print` here does), and we
+> carry the downstream failure reason into the triggering job
+> (`workflow-failure-reason`).
 
 This action triggers another GitHub Actions workflow, using the `workflow_dispatch` event.  
 The workflow must be configured for this event type e.g. `on: [workflow_dispatch]`
@@ -105,6 +107,20 @@ For details of the `workflow_dispatch` even see [this blog post introducing this
 
 > The result of the triggered workflow. May be one of `success`, `failure`, `cancelled`, `timed_out`, `skipped`, `neutral`, `action_required`. The step in your workflow will fail if the triggered workflow completes with `failure`, `cancelled` or `timed_out`. Other workflow conlusion are considered success.
 > Only available if `wait-for-completion` is `true`
+
+### `workflow-failure-reason`
+
+> Why the triggered workflow did not succeed, read from the `::error::` lines its failed jobs
+> logged and formatted as `<job name>: <error>` per job, joined by ` | `. Empty when the
+> workflow succeeded or when no job logged an error.
+>
+> The same text is appended to this step's failure message (`Workflow run has failed - Wait for
+> dev deployment: a dev deploy was still running after 900s`), raised as an annotation per
+> failed job, and written to the job summary as a table — so the cause is readable on the
+> triggering run and on the PR checks page without opening the triggered run.
+>
+> Independent of `workflow-logs`: the failed jobs' logs are read for this even when logs are
+> set to `ignore`. Only available if `wait-for-completion` is `true`.
 
 ### `workflow-logs`
 

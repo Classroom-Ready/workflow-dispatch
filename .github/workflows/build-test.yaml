@@ -107,11 +107,11 @@ jobs:
         display-workflow-run-url-interval: 10s
         display-workflow-run-url-timeout: 5m
       continue-on-error: true
-    - uses: nick-invision/assert-action@v1
+    - uses: nick-fields/assert-action@v4
       with:
         expected: success
         actual: ${{ steps.long-running-workflow.outputs.workflow-conclusion }}
-    - uses: nick-invision/assert-action@v1
+    - uses: nick-fields/assert-action@v4
       with:
         expected: success
         actual: ${{ steps.long-running-workflow.outcome }}
@@ -140,14 +140,26 @@ jobs:
         display-workflow-run-url-timeout: 60s
       continue-on-error: true
     - run: echo "worflow-conclusion=${{ steps.failing-workflow.outputs.workflow-conclusion }}"
-    - uses: nick-invision/assert-action@v1
+    - uses: nick-fields/assert-action@v4
       with:
         expected: failure
         actual: ${{ steps.failing-workflow.outputs.workflow-conclusion }}
-    - uses: nick-invision/assert-action@v1
+    - uses: nick-fields/assert-action@v4
       with:
         expected: failure
         actual: ${{ steps.failing-workflow.outcome }}
+    # The fixture's ::error:: text has to survive the round trip into this job - that is what
+    # lets a caller read the cause on the triggering run.
+    - uses: nick-fields/assert-action@v4
+      with:
+        comparison: contains
+        expected: 'the failing fixture stopped on purpose'
+        actual: ${{ steps.failing-workflow.outputs.workflow-failure-reason }}
+    - uses: nick-fields/assert-action@v4
+      with:
+        comparison: contains
+        expected: 'echo'
+        actual: ${{ steps.failing-workflow.outputs.workflow-failure-reason }}
 
   timeout-test:
     needs: [build]
@@ -172,11 +184,11 @@ jobs:
         display-workflow-run-url-interval: 10s
         display-workflow-run-url-timeout: 30s
       continue-on-error: true
-    - uses: nick-invision/assert-action@v1
+    - uses: nick-fields/assert-action@v4
       with:
         expected: timed_out
         actual: ${{ steps.timeout-workflow.outputs.workflow-conclusion }}
-    - uses: nick-invision/assert-action@v1
+    - uses: nick-fields/assert-action@v4
       with:
         expected: failure
         actual: ${{ steps.timeout-workflow.outcome }}
@@ -205,11 +217,11 @@ jobs:
         display-workflow-run-url-timeout: 120s
         workflow-logs: print
       continue-on-error: true
-    - uses: nick-invision/assert-action@v1
+    - uses: nick-fields/assert-action@v4
       with:
         expected: timed_out
         actual: ${{ steps.print-workflow-logs.outputs.workflow-conclusion }}
-    - uses: nick-invision/assert-action@v1
+    - uses: nick-fields/assert-action@v4
       with:
         expected: failure
         actual: ${{ steps.print-workflow-logs.outcome }}
@@ -261,15 +273,15 @@ jobs:
               "environment": "${{ matrix.environment }}"
             }
         continue-on-error: true
-      - uses: nick-invision/assert-action@v1
+      - uses: nick-fields/assert-action@v4
         with:
           expected: success
           actual: ${{ steps.named-run-workflow.outputs.workflow-conclusion }}
-      - uses: nick-invision/assert-action@v1
+      - uses: nick-fields/assert-action@v4
         with:
           expected: success
           actual: ${{ steps.named-run-workflow.outcome }}
-      - uses: nick-invision/assert-action@v1
+      - uses: nick-fields/assert-action@v4
         env:
           EXPECTED_LOG_MESSAGE: "### Env: ${{ matrix.environment }} ###"
         with:

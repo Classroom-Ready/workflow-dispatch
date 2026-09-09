@@ -6,7 +6,8 @@
 // ----------------------------------------------------------------------------
 
 import * as core from '@actions/core'
-import { formatDuration, getArgs, isTimedOut, sleep } from './utils'
+import { collectJobFailures, describeFailures, reportFailures } from './failure-reason'
+import { formatDuration, getArgs, getOctokit, isTimedOut, sleep } from './utils'
 import { WorkflowHandler, WorkflowRunConclusion, WorkflowRunResult, WorkflowRunStatus } from './workflow-handler'
 import { handleWorkflowLogsPerJob } from './workflow-logs-handler'
 
@@ -44,7 +45,11 @@ async function waitForCompletionOrTimeout(workflowHandler: WorkflowHandler, chec
   return { result, start }
 }
 
-function computeConclusion(start: number, waitForCompletionTimeout: number, result?: WorkflowRunResult) {
+function withReason(message: string, reason: string) {
+  return reason ? `${message} - ${reason}` : message
+}
+
+function computeConclusion(start: number, waitForCompletionTimeout: number, reason: string, result?: WorkflowRunResult) {
   if (isTimedOut(start, waitForCompletionTimeout)) {
     core.info('Workflow wait timed out')
     core.setOutput('workflow-conclusion', WorkflowRunConclusion.TIMED_OUT)
@@ -55,9 +60,32 @@ function computeConclusion(start: number, waitForCompletionTimeout: number, resu
   const conclusion = result?.conclusion
   core.setOutput('workflow-conclusion', conclusion)
 
-  if (conclusion === WorkflowRunConclusion.FAILURE)   throw new Error('Workflow run has failed')
-  if (conclusion === WorkflowRunConclusion.CANCELLED) throw new Error('Workflow run was cancelled')
-  if (conclusion === WorkflowRunConclusion.TIMED_OUT) throw new Error('Workflow run has failed due to timeout')
+  if (conclusion === WorkflowRunConclusion.FAILURE)   throw new Error(withReason('Workflow run has failed', reason))
+  if (conclusion === WorkflowRunConclusion.CANCELLED) throw new Error(withReason('Workflow run was cancelled', reason))
+  if (conclusion === WorkflowRunConclusion.TIMED_OUT) throw new Error(withReason('Workflow run has failed due to timeout', reason))
+}
+
+// The message this step fails with is all a reader sees on the PR checks page, so carry the
+// downstream job's own error into it rather than making them open the triggered run.
+async function resolveFailureReason(args: any, workflowHandler: WorkflowHandler, result?: WorkflowRunResult): Promise<string> {
+  const conclusion = result?.conclusion
+  if (!conclusion || conclusion === WorkflowRunConclusion.SUCCESS) {
+    return ''
+  }
+  try {
+    const runId = await workflowHandler.getWorkflowRunId()
+    const failures = await collectJobFailures(getOctokit(args.token), args.owner, args.repo, runId)
+    if (failures.length === 0) {
+      return ''
+    }
+    reportFailures(failures, result?.url)
+    const reason = describeFailures(failures)
+    core.setOutput('workflow-failure-reason', reason)
+    return reason
+  } catch (error: any) {
+    core.warning(`Failed to read why the triggered workflow failed. Cause: ${error.message}`)
+    return ''
+  }
 }
 
 async function handleLogs(args: any, workflowHandler: WorkflowHandler) {
@@ -98,7 +126,9 @@ async function run(): Promise<void> {
 
     core.setOutput('workflow-id', result?.id)
     core.setOutput('workflow-url', result?.url)
-    computeConclusion(start, args.waitForCompletionTimeout, result)
+
+    const reason = await resolveFailureReason(args, workflowHandler, result)
+    computeConclusion(start, args.waitForCompletionTimeout, reason, result)
 
   } catch (error: any) {
     core.setFailed(error.message)

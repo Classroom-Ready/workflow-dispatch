@@ -20102,6 +20102,7 @@ var Summary = class {
   }
 };
 var _summary = new Summary();
+var summary = _summary;
 
 // node_modules/@actions/core/lib/platform.js
 import os3 from "os";
@@ -20167,6 +20168,85 @@ function startGroup(name) {
 }
 function endGroup() {
   issue("endgroup");
+}
+
+// src/failure-reason.ts
+var FAILED_CONCLUSIONS = ["failure", "timed_out", "cancelled", "action_required"];
+var LOG_LINE = /^(?:\d{4}-\d{2}-\d{2}T\S+Z\s)?(.*)$/;
+var ERROR_LINE = /^##\[error\](.*)$/;
+var EXIT_CODE_ONLY = /^Process completed with exit code \d+\.?$/;
+function extractErrorMessages(logs) {
+  const messages = [];
+  for (const rawLine of logs.split("\n")) {
+    const line = rawLine.replace(/\r$/, "").match(LOG_LINE)?.[1];
+    const message = line?.match(ERROR_LINE)?.[1]?.trim();
+    if (message && !messages.includes(message)) {
+      messages.push(message);
+    }
+  }
+  const specific = messages.filter((message) => !EXIT_CODE_ONLY.test(message));
+  return specific.length > 0 ? specific : messages;
+}
+function describeFailures(failures) {
+  return failures.map((failure) => `${failure.name}: ${failure.reasons.join(" / ") || failure.conclusion}`).join(" | ");
+}
+async function collectJobFailures(octokit, owner, repo, runId) {
+  const response = await octokit.rest.actions.listJobsForWorkflowRun({
+    owner,
+    repo,
+    run_id: runId
+  });
+  const failures = [];
+  for (const job of response.data.jobs) {
+    if (!FAILED_CONCLUSIONS.includes(job.conclusion)) {
+      continue;
+    }
+    let reasons = [];
+    try {
+      const jobLog = await octokit.rest.actions.downloadJobLogsForWorkflowRun({
+        owner,
+        repo,
+        job_id: job.id
+      });
+      reasons = extractErrorMessages(jobLog.data);
+    } catch (error2) {
+      debug(`Failed to read logs of job '${job.name}' (${job.id}). Cause: ${error2.message}`);
+    }
+    failures.push({ name: job.name, conclusion: job.conclusion, reasons });
+  }
+  return failures;
+}
+function reportFailures(failures, runUrl) {
+  for (const failure of failures) {
+    for (const reason of failure.reasons) {
+      error(reason, { title: `${failure.name} (${failure.conclusion})` });
+    }
+    if (failure.reasons.length === 0) {
+      error(`Job '${failure.name}' ended as ${failure.conclusion} and logged no error.`, {
+        title: `${failure.name} (${failure.conclusion})`
+      });
+    }
+  }
+  if (!process.env.GITHUB_STEP_SUMMARY) {
+    return;
+  }
+  try {
+    let summary2 = summary.addHeading("Dispatched workflow failed", 3);
+    if (runUrl) {
+      summary2 = summary2.addRaw(`Run: ${runUrl}`, true);
+    }
+    summary2 = summary2.addTable([
+      [{ data: "Job", header: true }, { data: "Conclusion", header: true }, { data: "Reason", header: true }],
+      ...failures.map((failure) => [
+        failure.name,
+        failure.conclusion,
+        failure.reasons.join("<br>") || "(no error logged)"
+      ])
+    ]);
+    summary2.write();
+  } catch (error2) {
+    debug(`Failed to write job summary. Cause: ${error2.message}`);
+  }
 }
 
 // node_modules/@actions/github/lib/context.js
@@ -24210,6 +24290,12 @@ var WorkflowHandler = class {
 };
 
 // src/workflow-logs-handler.ts
+function hasLogArchive(job) {
+  return job.status === "completed" && job.conclusion !== "skipped";
+}
+function describeJob(job) {
+  return `'${job.name}' (${job.conclusion ?? job.status})`;
+}
 async function handleWorkflowLogsPerJob(args, workflowRunId) {
   const mode = args.workflowLogMode;
   const token = args.token;
@@ -24228,6 +24314,10 @@ async function handleWorkflowLogsPerJob(args, workflowRunId) {
   });
   await handler2.handleJobList(response.data.jobs);
   for (const job of response.data.jobs) {
+    if (!hasLogArchive(job)) {
+      info(`Job ${describeJob(job)} has no logs to retrieve.`);
+      continue;
+    }
     try {
       const jobLog = await octokit.rest.actions.downloadJobLogsForWorkflowRun({
         owner,
@@ -24260,7 +24350,7 @@ var PrintLogsHandler = class {
     endGroup();
   }
   async handleError(job, error2) {
-    warning(escapeImportedLogs(error2.message));
+    warning(`Failed to retrieve logs of job ${describeJob(job)}. Cause: ${neutralizeWorkflowCommands(error2.message)}`);
   }
 };
 var OutputLogsHandler = class {
@@ -24272,7 +24362,7 @@ var OutputLogsHandler = class {
     this.logs.set(job.name, logs);
   }
   async handleError(job, error2) {
-    warning(escapeImportedLogs(error2.message));
+    warning(`Failed to retrieve logs of job ${describeJob(job)}. Cause: ${neutralizeWorkflowCommands(error2.message)}`);
   }
   getJsonLogs() {
     const result = {};
@@ -24314,8 +24404,11 @@ function logHandlerFactory(mode) {
       return null;
   }
 }
+function neutralizeWorkflowCommands(str) {
+  return str.replace(/##\[([^\]]+)\]/gm, "##<$1>");
+}
 function escapeImportedLogs(str) {
-  return str.replace(/^/mg, "| ").replace(/##\[([^\]]+)\]/gm, "##<$1>");
+  return neutralizeWorkflowCommands(str.replace(/^/mg, "| "));
 }
 
 // src/main.ts
@@ -24349,7 +24442,10 @@ async function waitForCompletionOrTimeout(workflowHandler, checkStatusInterval, 
   } while (status !== "completed" /* COMPLETED */ && !isTimedOut(start, waitForCompletionTimeout));
   return { result, start };
 }
-function computeConclusion(start, waitForCompletionTimeout, result) {
+function withReason(message, reason) {
+  return reason ? `${message} - ${reason}` : message;
+}
+function computeConclusion(start, waitForCompletionTimeout, reason, result) {
   if (isTimedOut(start, waitForCompletionTimeout)) {
     info("Workflow wait timed out");
     setOutput("workflow-conclusion", "timed_out" /* TIMED_OUT */);
@@ -24358,9 +24454,29 @@ function computeConclusion(start, waitForCompletionTimeout, result) {
   info(`Workflow completed with conclusion=${result?.conclusion}`);
   const conclusion = result?.conclusion;
   setOutput("workflow-conclusion", conclusion);
-  if (conclusion === "failure" /* FAILURE */) throw new Error("Workflow run has failed");
-  if (conclusion === "cancelled" /* CANCELLED */) throw new Error("Workflow run was cancelled");
-  if (conclusion === "timed_out" /* TIMED_OUT */) throw new Error("Workflow run has failed due to timeout");
+  if (conclusion === "failure" /* FAILURE */) throw new Error(withReason("Workflow run has failed", reason));
+  if (conclusion === "cancelled" /* CANCELLED */) throw new Error(withReason("Workflow run was cancelled", reason));
+  if (conclusion === "timed_out" /* TIMED_OUT */) throw new Error(withReason("Workflow run has failed due to timeout", reason));
+}
+async function resolveFailureReason(args, workflowHandler, result) {
+  const conclusion = result?.conclusion;
+  if (!conclusion || conclusion === "success" /* SUCCESS */) {
+    return "";
+  }
+  try {
+    const runId = await workflowHandler.getWorkflowRunId();
+    const failures = await collectJobFailures(getOctokit2(args.token), args.owner, args.repo, runId);
+    if (failures.length === 0) {
+      return "";
+    }
+    reportFailures(failures, result?.url);
+    const reason = describeFailures(failures);
+    setOutput("workflow-failure-reason", reason);
+    return reason;
+  } catch (error2) {
+    warning(`Failed to read why the triggered workflow failed. Cause: ${error2.message}`);
+    return "";
+  }
 }
 async function handleLogs(args, workflowHandler) {
   try {
@@ -24389,7 +24505,8 @@ async function run() {
     await handleLogs(args, workflowHandler);
     setOutput("workflow-id", result?.id);
     setOutput("workflow-url", result?.url);
-    computeConclusion(start, args.waitForCompletionTimeout, result);
+    const reason = await resolveFailureReason(args, workflowHandler, result);
+    computeConclusion(start, args.waitForCompletionTimeout, reason, result);
   } catch (error2) {
     setFailed(error2.message);
   }
