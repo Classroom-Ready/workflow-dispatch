@@ -4,7 +4,19 @@ import { getOctokit } from './utils'
 
 interface JobInfo {
   name: string,
-  id: number
+  id: number,
+  status?: string | null,
+  conclusion?: string | null
+}
+
+// A skipped job never ran, so it has no log archive and the download 404s. Neither does a job
+// that is still going - which is the state the run is left in when the wait times out.
+function hasLogArchive(job: JobInfo): boolean {
+  return job.status === 'completed' && job.conclusion !== 'skipped'
+}
+
+function describeJob(job: JobInfo): string {
+  return `'${job.name}' (${job.conclusion ?? job.status})`
 }
 
 
@@ -30,6 +42,10 @@ export async function handleWorkflowLogsPerJob(args: any, workflowRunId: number)
   await handler.handleJobList(response.data.jobs)
 
   for (const job of response.data.jobs) {
+    if (!hasLogArchive(job)) {
+      core.info(`Job ${describeJob(job)} has no logs to retrieve.`)
+      continue
+    }
     try {
       const jobLog = await octokit.rest.actions.downloadJobLogsForWorkflowRun({
         owner: owner,
@@ -73,7 +89,7 @@ class PrintLogsHandler implements WorkflowLogHandler {
   }
 
   async handleError(job: JobInfo, error: Error): Promise<void> {
-    core.warning(escapeImportedLogs(error.message))
+    core.warning(`Failed to retrieve logs of job ${describeJob(job)}. Cause: ${neutralizeWorkflowCommands(error.message)}`)
   }
 }
 
@@ -89,7 +105,7 @@ class OutputLogsHandler implements WorkflowLogHandler {
   }
 
   async handleError(job: JobInfo, error: Error): Promise<void> {
-    core.warning(escapeImportedLogs(error.message))
+    core.warning(`Failed to retrieve logs of job ${describeJob(job)}. Cause: ${neutralizeWorkflowCommands(error.message)}`)
   }
 
   getJsonLogs(): string {
@@ -136,7 +152,12 @@ function logHandlerFactory(mode: string): WorkflowLogHandler | null {
   }
 }
 
+// Imported text must not be read back as workflow commands by the runner hosting this job.
+function neutralizeWorkflowCommands(str: string): string {
+  return str.replace(/##\[([^\]]+)\]/gm, '##<$1>')
+}
+
+// Marks every line of an imported log body as belonging to the triggered run.
 function escapeImportedLogs(str: string): string {
-  return str.replace(/^/mg, '| ')
-    .replace(/##\[([^\]]+)\]/gm, '##<$1>')
+  return neutralizeWorkflowCommands(str.replace(/^/mg, '| '))
 }

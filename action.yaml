@@ -61,6 +61,12 @@ outputs:
     description: 'ID of the triggered workflow'
   workflow-url:
     description: 'URL of the triggered workflow'
+  workflow-failure-reason:
+    description: >-
+      Why the triggered workflow did not succeed, as '<job name>: <error>' per failed job,
+      joined by ' | '. Empty when the workflow succeeded or logged no error. The same text is
+      appended to this step's failure message, raised as annotations, and written to the job
+      summary.
   workflow-logs:
     description: |
       Logs of the triggered workflow. Based on `inputs.workflow-logs`, format is set to:

@@ -8,5 +8,9 @@ jobs:
   echo:
     runs-on: ubuntu-latest
     steps:
+      # The ::error:: command is what a real gate uses to say why it stopped; failing-test
+      # asserts this exact text reaches the triggering job's workflow-failure-reason.
       - name: Fail
-        run: exit 1
+        run: |
+          echo "::error title=Fixture gate::the failing fixture stopped on purpose"
+          exit 1
