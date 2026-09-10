@@ -3,7 +3,15 @@ name: Build & Test
 on:
   push:
     branches: [ master ]
+  pull_request:
+    branches: [ master ]
   workflow_dispatch:
+
+# dist/index.js is a published artifact rather than a PR deliverable: the deploy job
+# rebuilds it from the merged tree and pushes it back on every master push, so a PR that
+# only moves yarn.lock is expected to carry a bundle built from the older dependency set
+# and no check compares the committed bundle against a fresh build. Every job that
+# exercises dist rebuilds it first, so CI tests the bytes deploy will publish.
 
 # The self-tests dispatch fixture workflows in THIS repo. workflow_dispatch and
 # repository_dispatch are the documented exceptions to the "GITHUB_TOKEN can't trigger
@@ -17,6 +25,16 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Whether the live-dispatch self-tests below can run at all. They call
+    # createWorkflowDispatch against this repo, which needs a GITHUB_TOKEN carrying
+    # actions: write, and two kinds of pull_request run never get one:
+    #   - a PR from a fork, where the token is read-only;
+    #   - a PR opened by Dependabot, whose runs get a read-only token and no secrets
+    #     even though the branch lives in this repo.
+    # Those runs are limited to build + lint + test, which needs nothing but the
+    # checkout. push and workflow_dispatch always run the full suite.
+    outputs:
+      self-tests: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') }}
     steps:
     - name: Check out repository
       uses: actions/checkout@v4
@@ -29,6 +47,8 @@ jobs:
       run: |
         yarn install --immutable
         yarn build
+    - name: Lint
+      run: yarn lint
     - name: Test
       run: yarn test
     - name: Archive dist
@@ -37,8 +57,14 @@ jobs:
         name: build
         path: dist
 
+  # Every self-test below passes `ref: ${{ github.head_ref || github.ref }}`. The action
+  # otherwise defaults the dispatch ref to github.context.ref, which on a pull_request is
+  # refs/pull/<n>/merge - not a branch or tag, so the dispatch API rejects it. head_ref is
+  # the PR's source branch and is empty on push and workflow_dispatch, where github.ref is
+  # the branch being built.
   echo-1-test:
     needs: [build]
+    if: needs.build.outputs.self-tests == 'true'
     runs-on: ubuntu-latest
     name: "echo-1-test [trigger|by workflow name]"
     steps:
@@ -54,11 +80,13 @@ jobs:
       with:
         workflow: Message Echo 1
         token: ${{ secrets.GITHUB_TOKEN }}
+        ref: ${{ github.head_ref || github.ref }}
         inputs: '{"message": "blah blah"}'
         wait-for-completion: false
 
   echo-2-test:
     needs: [build]
+    if: needs.build.outputs.self-tests == 'true'
     runs-on: ubuntu-latest
     name: "echo-2-test [trigger|by workflow filename]"
     steps:
@@ -74,6 +102,7 @@ jobs:
       with:
         workflow: echo-2.yaml
         token: ${{ secrets.GITHUB_TOKEN }}
+        ref: ${{ github.head_ref || github.ref }}
         wait-for-completion: false
 
     # - name: Invoke echo 1 workflow by id
@@ -86,6 +115,7 @@ jobs:
 
   long-running-test:
     needs: [build]
+    if: needs.build.outputs.self-tests == 'true'
     runs-on: ubuntu-latest
     name: "long-running-test [trigger+wait|by workflow filename|shoud succeed]"
     steps:
@@ -102,6 +132,7 @@ jobs:
       with:
         workflow: long-running.yml
         token: ${{ secrets.GITHUB_TOKEN }}
+        ref: ${{ github.head_ref || github.ref }}
         wait-for-completion-interval: 10s
         wait-for-completion-timeout: 5m
         display-workflow-run-url-interval: 10s
@@ -118,6 +149,7 @@ jobs:
 
   failing-test:
     needs: [build]
+    if: needs.build.outputs.self-tests == 'true'
     runs-on: ubuntu-latest
     name: "failing-test [trigger+wait|by workflow filename|should report failure]"
     steps:
@@ -134,6 +166,7 @@ jobs:
       with:
         workflow: failing.yml
         token: ${{ secrets.GITHUB_TOKEN }}
+        ref: ${{ github.head_ref || github.ref }}
         wait-for-completion-interval: 10s
         wait-for-completion-timeout: 60s
         display-workflow-run-url-interval: 10s
@@ -163,6 +196,7 @@ jobs:
 
   timeout-test:
     needs: [build]
+    if: needs.build.outputs.self-tests == 'true'
     runs-on: ubuntu-latest
     name: "timeout-test [trigger+wait|by workflow filename|should report timed_out]"
     steps:
@@ -179,6 +213,7 @@ jobs:
       with:
         workflow: timeout.yml
         token: ${{ secrets.GITHUB_TOKEN }}
+        ref: ${{ github.head_ref || github.ref }}
         wait-for-completion-interval: 10s
         wait-for-completion-timeout: 30s
         display-workflow-run-url-interval: 10s
@@ -195,6 +230,7 @@ jobs:
 
   print-workflow-logs-test:
     needs: [build]
+    if: needs.build.outputs.self-tests == 'true'
     runs-on: ubuntu-latest
     name: "print-workflow-logs-test [trigger+wait|by workflow filename|print logs|should report timed_out]"
     steps:
@@ -211,6 +247,7 @@ jobs:
       with:
         workflow: retrieve-logs.yml
         token: ${{ secrets.GITHUB_TOKEN }}
+        ref: ${{ github.head_ref || github.ref }}
         wait-for-completion-interval: 10s
         wait-for-completion-timeout: 120s
         display-workflow-run-url-interval: 10s
@@ -237,6 +274,7 @@ jobs:
 
   parallel-runs-test:
     needs: [build]
+    if: needs.build.outputs.self-tests == 'true'
     runs-on: ubuntu-latest
     name: "parallel-runs-test [trigger+wait|by workflow filename|should succeed]"
     strategy:
@@ -261,6 +299,7 @@ jobs:
         with:
           workflow: named-run.yml
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref || github.ref }}
           run-name: ${{ env.RUN_NAME }}
           wait-for-completion-interval: 10s
           wait-for-completion-timeout: 120s
@@ -297,6 +336,9 @@ jobs:
       - timeout-test
       - print-workflow-logs-test
       - parallel-runs-test
+    # Publishing runs off master (or a manual dispatch) only - a pull_request run must
+    # never push a commit, and its token has no contents: write to do it with.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     # Pushes the rebuilt dist back to the repo, so it needs write on top of the
     # workflow-level read default.
