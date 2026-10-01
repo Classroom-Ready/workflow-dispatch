@@ -327,6 +327,99 @@ jobs:
           expected: true
           actual: ${{ contains(fromJson(steps.named-run-workflow.outputs.workflow-logs).echo.*.message, env.EXPECTED_LOG_MESSAGE) }}
 
+  # superseded-earlier-test and superseded-later-test dispatch the 'superseded' fixture into
+  # one concurrency group; the later dispatch cancels the earlier run. The earlier caller
+  # follows the later run, so both finish green on the same run.
+  superseded-earlier-test:
+    needs: [build]
+    if: needs.build.outputs.self-tests == 'true'
+    runs-on: ubuntu-latest
+    name: "superseded-earlier-test [trigger+wait|run gets cancelled|should follow the newer run]"
+    outputs:
+      run-id: ${{ steps.superseded-workflow.outputs.workflow-id }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Download dist
+        uses: actions/download-artifact@v8
+        with:
+          name: build
+          path: dist
+      - name: Invoke 'superseded' workflow and wait for result using this action
+        id: superseded-workflow
+        uses: ./
+        with:
+          workflow: superseded.yml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref || github.ref }}
+          wait-for-completion-interval: 10s
+          wait-for-completion-timeout: 5m
+          display-workflow-run-url-interval: 10s
+          display-workflow-run-url-timeout: 5m
+          inputs: '{"group": "${{ github.run_id }}-${{ github.run_attempt }}"}'
+        continue-on-error: true
+      - uses: nick-fields/assert-action@0efd6166067d9c59d89c710fab4f79fb066f8985 # v4.0.1
+        with:
+          expected: success
+          actual: ${{ steps.superseded-workflow.outputs.workflow-conclusion }}
+      - uses: nick-fields/assert-action@0efd6166067d9c59d89c710fab4f79fb066f8985 # v4.0.1
+        with:
+          expected: success
+          actual: ${{ steps.superseded-workflow.outcome }}
+
+  superseded-later-test:
+    needs: [build]
+    if: needs.build.outputs.self-tests == 'true'
+    runs-on: ubuntu-latest
+    name: "superseded-later-test [trigger+wait|cancels the earlier run|should succeed]"
+    outputs:
+      run-id: ${{ steps.superseded-workflow.outputs.workflow-id }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Download dist
+        uses: actions/download-artifact@v8
+        with:
+          name: build
+          path: dist
+      - name: Let the earlier caller's run start first
+        run: sleep 40s
+      - name: Invoke 'superseded' workflow and wait for result using this action
+        id: superseded-workflow
+        uses: ./
+        with:
+          workflow: superseded.yml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref || github.ref }}
+          wait-for-completion-interval: 10s
+          wait-for-completion-timeout: 5m
+          display-workflow-run-url-interval: 10s
+          display-workflow-run-url-timeout: 5m
+          inputs: '{"group": "${{ github.run_id }}-${{ github.run_attempt }}"}'
+        continue-on-error: true
+      - uses: nick-fields/assert-action@0efd6166067d9c59d89c710fab4f79fb066f8985 # v4.0.1
+        with:
+          expected: success
+          actual: ${{ steps.superseded-workflow.outputs.workflow-conclusion }}
+      - uses: nick-fields/assert-action@0efd6166067d9c59d89c710fab4f79fb066f8985 # v4.0.1
+        with:
+          expected: success
+          actual: ${{ steps.superseded-workflow.outcome }}
+
+  superseded-same-run-test:
+    needs: [superseded-earlier-test, superseded-later-test]
+    runs-on: ubuntu-latest
+    name: "superseded-same-run-test [both callers finished on the later run]"
+    steps:
+      - name: Both callers report the later run
+        env:
+          EARLIER_RUN: ${{ needs.superseded-earlier-test.outputs.run-id }}
+          LATER_RUN: ${{ needs.superseded-later-test.outputs.run-id }}
+        run: |
+          echo "earlier caller finished on run '${EARLIER_RUN}', later caller on run '${LATER_RUN}'"
+          test -n "${LATER_RUN}"
+          test "${EARLIER_RUN}" = "${LATER_RUN}"
+
   deploy:
     needs:
       - echo-1-test
@@ -336,6 +429,7 @@ jobs:
       - timeout-test
       - print-workflow-logs-test
       - parallel-runs-test
+      - superseded-same-run-test
     # Publishing runs off master (or a manual dispatch) only - a pull_request run must
     # never push a commit, and its token has no contents: write to do it with.
     if: github.event_name != 'pull_request'

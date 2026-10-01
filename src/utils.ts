@@ -54,6 +54,7 @@ export function getArgs() {
   const checkStatusInterval = toMilliseconds(core.getInput('wait-for-completion-interval'))
   const runName = core.getInput('run-name')
   const workflowLogMode = core.getInput('workflow-logs')
+  const maxFollows = parseMaxFollows(core.getInput('max-follows'))
 
   return {
     token,
@@ -69,8 +70,17 @@ export function getArgs() {
     waitForCompletion,
     waitForCompletionTimeout,
     runName,
-    workflowLogMode
+    workflowLogMode,
+    maxFollows
   }
+}
+
+export function parseMaxFollows(maxFollowsStr: string): number {
+  const maxFollows = Number(maxFollowsStr || '0')
+  if (!Number.isInteger(maxFollows) || maxFollows < 0) {
+    throw new Error(`'max-follows' must be a whole number of 0 or more, got '${maxFollowsStr}'`)
+  }
+  return maxFollows
 }
 
 // octokit sends REST requests unversioned by default, and GitHub is sunsetting unversioned

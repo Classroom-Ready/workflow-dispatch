@@ -53,6 +53,13 @@ inputs:
       `json-output` retrieves logs from triggered workflow and return a json array groupped by job name.
     required: false
     default: ignore
+  max-follows:
+    description: >-
+      When the triggered run is cancelled because a newer run of the same workflow on the same
+      branch started (e.g. concurrency cancel-in-progress), wait on that newer run instead and
+      report its result. At most this many newer runs are followed; 0 disables following.
+    required: false
+    default: '5'
 
 outputs:
   workflow-conclusion:

@@ -20331,6 +20331,56 @@ function reportFailures(failures, runUrl) {
   }
 }
 
+// src/supersede.ts
+async function findSupersedingRun(octokit, owner, repo, runId) {
+  const { data: cancelled } = await octokit.rest.actions.getWorkflowRun({
+    owner,
+    repo,
+    run_id: runId
+  });
+  const cancelledAt = Date.parse(cancelled.created_at);
+  const { data } = await octokit.rest.actions.listWorkflowRuns({
+    owner,
+    repo,
+    workflow_id: cancelled.workflow_id,
+    branch: cancelled.head_branch,
+    created: `>=${cancelled.created_at}`
+  });
+  const later = data.workflow_runs.filter((run2) => {
+    const createdAt = Date.parse(run2.created_at);
+    return createdAt > cancelledAt || createdAt === cancelledAt && run2.id > runId;
+  });
+  if (later.length === 0) {
+    return void 0;
+  }
+  const newest = later.reduce((a, b) => {
+    const byCreated = Date.parse(b.created_at) - Date.parse(a.created_at);
+    return byCreated > 0 || byCreated === 0 && b.id > a.id ? b : a;
+  });
+  return { id: newest.id, url: newest.html_url };
+}
+async function followSupersedingRuns(waited, options) {
+  for (let follows = 0; follows < options.maxFollows; follows++) {
+    const runId = options.cancelledRunId(waited);
+    if (runId === void 0) {
+      return waited;
+    }
+    let successor;
+    try {
+      successor = await options.findSuccessor(runId);
+    } catch (error2) {
+      warning(`Failed to look for a run that superseded cancelled run ${runId}. Cause: ${error2.message}`);
+      return waited;
+    }
+    if (!successor) {
+      return waited;
+    }
+    info(`Run ${runId} was cancelled by newer run ${successor.id}; following it: ${successor.url}`);
+    waited = await options.follow(successor);
+  }
+  return waited;
+}
+
 // node_modules/@actions/github/lib/context.js
 import { readFileSync, existsSync as existsSync2 } from "fs";
 import { EOL as EOL5 } from "os";
@@ -24119,6 +24169,7 @@ function getArgs() {
   const checkStatusInterval = toMilliseconds(getInput("wait-for-completion-interval"));
   const runName = getInput("run-name");
   const workflowLogMode = getInput("workflow-logs");
+  const maxFollows = parseMaxFollows(getInput("max-follows"));
   return {
     token,
     workflowRef,
@@ -24133,8 +24184,16 @@ function getArgs() {
     waitForCompletion,
     waitForCompletionTimeout,
     runName,
-    workflowLogMode
+    workflowLogMode,
+    maxFollows
   };
+}
+function parseMaxFollows(maxFollowsStr) {
+  const maxFollows = Number(maxFollowsStr || "0");
+  if (!Number.isInteger(maxFollows) || maxFollows < 0) {
+    throw new Error(`'max-follows' must be a whole number of 0 or more, got '${maxFollowsStr}'`);
+  }
+  return maxFollows;
 }
 var GITHUB_API_VERSION = "2026-03-10";
 function getOctokit2(token) {
@@ -24289,6 +24348,10 @@ var WorkflowHandler = class {
       debug2("Workflow Run artifacts error", error2);
       throw error2;
     }
+  }
+  // Tracks `runId` from here on, in place of the run this handler dispatched.
+  followRun(runId) {
+    this.workflowRunId = runId;
   }
   async findAllWorkflowRuns() {
     try {
@@ -24583,7 +24646,19 @@ async function run() {
       return;
     }
     info("Waiting for workflow completion");
-    const { result, start } = await waitForCompletionOrTimeout(workflowHandler, args.checkStatusInterval, args.waitForCompletionTimeout);
+    const octokit = getOctokit2(args.token);
+    const { result, start } = await followSupersedingRuns(
+      await waitForCompletionOrTimeout(workflowHandler, args.checkStatusInterval, args.waitForCompletionTimeout),
+      {
+        maxFollows: args.maxFollows,
+        cancelledRunId: ({ result: result2 }) => result2?.conclusion === "cancelled" /* CANCELLED */ ? result2.id : void 0,
+        findSuccessor: (runId) => findSupersedingRun(octokit, args.owner, args.repo, runId),
+        follow: (successor) => {
+          workflowHandler.followRun(successor.id);
+          return waitForCompletionOrTimeout(workflowHandler, args.checkStatusInterval, args.waitForCompletionTimeout);
+        }
+      }
+    );
     await handleLogs(args, workflowHandler);
     setOutput("workflow-id", result?.id);
     setOutput("workflow-url", result?.url);

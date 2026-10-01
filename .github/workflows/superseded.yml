@@ -1,0 +1,21 @@
+# Test fixture dispatched by build-test.yaml's live-dispatch self-tests via this action. A
+# second dispatch with the same group cancels the first run, which the first caller follows.
+name: Superseded
+
+on:
+  workflow_dispatch:
+    inputs:
+      group:
+        description: Concurrency group shared by the dispatches that supersede each other
+        required: true
+
+concurrency:
+  group: superseded-${{ inputs.group }}
+  cancel-in-progress: true
+
+jobs:
+  echo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sleep
+        run: sleep 90s
