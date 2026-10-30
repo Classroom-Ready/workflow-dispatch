@@ -327,12 +327,15 @@ jobs:
           expected: true
           actual: ${{ contains(fromJson(steps.named-run-workflow.outputs.workflow-logs).echo.*.message, env.EXPECTED_LOG_MESSAGE) }}
 
-  # superseded-earlier-test and superseded-later-test dispatch the 'superseded' fixture into
+  # superseded-earlier-test and superseded-later-test dispatch the 'long-running' fixture into
   # one concurrency group; the later dispatch cancels the earlier run. The earlier caller
   # follows the later run, so both finish green on the same run.
+  # They wait for long-running-test, which dispatches the same fixture on the same branch:
+  # a run of it created after the earlier caller's would be the newer run that caller follows.
+  # !cancelled() keeps them running when long-running-test fails, since only its timing matters.
   superseded-earlier-test:
-    needs: [build]
-    if: needs.build.outputs.self-tests == 'true'
+    needs: [build, long-running-test]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.build.outputs.self-tests == 'true' }}
     runs-on: ubuntu-latest
     name: "superseded-earlier-test [trigger+wait|run gets cancelled|should follow the newer run]"
     outputs:
@@ -345,18 +348,18 @@ jobs:
         with:
           name: build
           path: dist
-      - name: Invoke 'superseded' workflow and wait for result using this action
+      - name: Invoke 'long-running' workflow in a shared concurrency group and wait for result using this action
         id: superseded-workflow
         uses: ./
         with:
-          workflow: superseded.yml
+          workflow: long-running.yml
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ github.head_ref || github.ref }}
           wait-for-completion-interval: 10s
           wait-for-completion-timeout: 5m
           display-workflow-run-url-interval: 10s
           display-workflow-run-url-timeout: 5m
-          inputs: '{"group": "${{ github.run_id }}-${{ github.run_attempt }}"}'
+          inputs: '{"group": "${{ github.run_id }}-${{ github.run_attempt }}", "sleep": "90s"}'
         continue-on-error: true
       - uses: nick-fields/assert-action@0efd6166067d9c59d89c710fab4f79fb066f8985 # v4.0.1
         with:
@@ -368,8 +371,8 @@ jobs:
           actual: ${{ steps.superseded-workflow.outcome }}
 
   superseded-later-test:
-    needs: [build]
-    if: needs.build.outputs.self-tests == 'true'
+    needs: [build, long-running-test]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.build.outputs.self-tests == 'true' }}
     runs-on: ubuntu-latest
     name: "superseded-later-test [trigger+wait|cancels the earlier run|should succeed]"
     outputs:
@@ -384,18 +387,18 @@ jobs:
           path: dist
       - name: Let the earlier caller's run start first
         run: sleep 40s
-      - name: Invoke 'superseded' workflow and wait for result using this action
+      - name: Invoke 'long-running' workflow in a shared concurrency group and wait for result using this action
         id: superseded-workflow
         uses: ./
         with:
-          workflow: superseded.yml
+          workflow: long-running.yml
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ github.head_ref || github.ref }}
           wait-for-completion-interval: 10s
           wait-for-completion-timeout: 5m
           display-workflow-run-url-interval: 10s
           display-workflow-run-url-timeout: 5m
-          inputs: '{"group": "${{ github.run_id }}-${{ github.run_attempt }}"}'
+          inputs: '{"group": "${{ github.run_id }}-${{ github.run_attempt }}", "sleep": "90s"}'
         continue-on-error: true
       - uses: nick-fields/assert-action@0efd6166067d9c59d89c710fab4f79fb066f8985 # v4.0.1
         with:

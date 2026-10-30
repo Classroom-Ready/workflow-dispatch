@@ -1,12 +1,31 @@
 # Test fixture dispatched by build-test.yaml's live-dispatch self-tests via this action.
+# The superseded-* self-tests also use it: a second dispatch with the same `group` cancels the
+# first run, which the first caller follows. They reuse this fixture because the dispatch API
+# only finds workflow files already on the default branch, so a fixture a PR adds can't be
+# dispatched from that PR's own CI.
 name: Long running
 
 on:
   workflow_dispatch:
+    inputs:
+      group:
+        description: Concurrency group shared by dispatches that supersede each other (default - one group per run)
+        required: false
+        default: ''
+      sleep:
+        description: How long the run sleeps
+        required: false
+        default: 10s
+
+concurrency:
+  group: long-running-${{ inputs.group || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   echo:
     runs-on: ubuntu-latest
     steps:
       - name: Sleep
-        run: sleep 10s
+        env:
+          SLEEP: ${{ inputs.sleep }}
+        run: sleep "$SLEEP"
