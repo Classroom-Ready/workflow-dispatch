@@ -124,6 +124,11 @@ export class WorkflowHandler {
     }
   }
 
+  // Tracks `runId` from here on, in place of the run this handler dispatched.
+  followRun(runId: number) {
+    this.workflowRunId = runId
+  }
+
   private async findAllWorkflowRuns() {
     try {
       const workflowId = await this.getWorkflowId()

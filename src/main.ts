@@ -7,6 +7,7 @@
 
 import * as core from '@actions/core'
 import { collectJobFailures, describeFailures, reportFailures } from './failure-reason'
+import { findSupersedingRun, followSupersedingRuns } from './supersede'
 import { formatDuration, getArgs, getOctokit, isTimedOut, sleep } from './utils'
 import { WorkflowHandler, WorkflowRunConclusion, WorkflowRunResult, WorkflowRunStatus } from './workflow-handler'
 import { handleWorkflowLogsPerJob } from './workflow-logs-handler'
@@ -120,7 +121,20 @@ async function run(): Promise<void> {
     }
 
     core.info('Waiting for workflow completion')
-    const { result, start } = await waitForCompletionOrTimeout(workflowHandler, args.checkStatusInterval, args.waitForCompletionTimeout)
+    const octokit = getOctokit(args.token)
+    // Each followed run gets the full wait-for-completion-timeout of its own.
+    const { result, start } = await followSupersedingRuns(
+      await waitForCompletionOrTimeout(workflowHandler, args.checkStatusInterval, args.waitForCompletionTimeout),
+      {
+        maxFollows: args.maxFollows,
+        cancelledRunId: ({ result }) => result?.conclusion === WorkflowRunConclusion.CANCELLED ? result.id : undefined,
+        findSuccessor: runId => findSupersedingRun(octokit, args.owner, args.repo, runId),
+        follow: successor => {
+          workflowHandler.followRun(successor.id)
+          return waitForCompletionOrTimeout(workflowHandler, args.checkStatusInterval, args.waitForCompletionTimeout)
+        }
+      }
+    )
 
     await handleLogs(args, workflowHandler)
 

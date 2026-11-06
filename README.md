@@ -68,6 +68,10 @@ For details of the `workflow_dispatch` even see [this blog post introducing this
 >
 > **/!\ Do not use a value that is too small to avoid `API Rate limit exceeded`**
 
+### `max-follows`
+
+> **Optional.** When the triggered run ends `cancelled` and a newer run of the same workflow on the same branch has started since (from any trigger - typically the triggered workflow's `concurrency` with `cancel-in-progress: true`), the action waits on that newer run instead and reports its result, logs and outputs. Several callers waiting on superseded runs therefore all finish with the result of the newest run. Each followed run gets the full `wait-for-completion-timeout`. At most this many newer runs are followed; `0` disables following. A cancelled run with no newer run fails the step. It has no effect if `wait-for-completion` is `false`. Default is `5`.
+
 ### `display-workflow-run-url`
 
 > **Optional.** If `true`, it displays in logs the URL of the triggered workflow. It is useful to follow the progress of the triggered workflow. It is enabled by default.
